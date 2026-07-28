@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-    <title>BEIN SPORTS UHD - پەخشی ڕاستەوخۆ</title>
+    <title>BEIN SPORTS UHD - پەخشی ڕاستەوخۆ (TS)</title>
     <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -20,7 +20,6 @@
             width: 100vw;
             background: #0a0a0a;
         }
-        /* چەپ: لیستی کەناڵەکان */
         #sidebar {
             width: 280px;
             min-width: 280px;
@@ -78,7 +77,6 @@
             margin-right: auto;
         }
 
-        /* ڕاست: ڤیدیۆ */
         #videoContainer {
             flex: 1;
             height: 100vh;
@@ -132,7 +130,7 @@
         #loading {
             position: absolute;
             inset: 0;
-            background: rgba(0,0,0,0.8);
+            background: rgba(0,0,0,0.85);
             display: flex;
             justify-content: center;
             align-items: center;
@@ -157,9 +155,10 @@
             font-size: 16px;
             text-align: center;
             padding: 20px;
+            cursor: pointer;
         }
+        #errorMsg:hover { text-decoration: underline; }
 
-        /* مۆبایل */
         @media (max-width: 768px) {
             #mainContainer { flex-direction: column; }
             #sidebar {
@@ -194,17 +193,11 @@
 <body>
 
 <div id="mainContainer">
-    <!-- چەپ: لیست -->
-    <div id="sidebar">
-        <!-- کەناڵەکان لە لایەن JavaScriptەوە پڕ دەکرێتەوە -->
-    </div>
-
-    <!-- ڕاست: ڤیدیۆ -->
+    <div id="sidebar"></div>
     <div id="videoContainer">
         <div id="brandName">BEIN SPORTS UHD</div>
         <video id="videoPlayer" playsinline autoplay muted></video>
         <button id="unmuteBtn" onclick="unmuteVideo()">🔊 کلیک بکە بۆ دەنگ</button>
-
         <div id="loading">
             <div class="spinner"></div>
             <span>⏳ بارکردنی پەخش...</span>
@@ -215,10 +208,10 @@
 
 <script>
 // ============================================================
-// 🐱 CAT SHADOW ENGINE - BEIN SPORTS UHD PLAYER
+// 🐱 CAT SHADOW ENGINE - BEIN SPORTS UHD (TS Streams)
 // ============================================================
 
-// 📺 لیستی کەناڵەکان (لە M3U-ی تۆوە)
+// 📺 لیستی کەناڵەکان - هەموو لینکەکان بە .ts کۆتاییان دێت
 const CHANNELS = [
     { id: 1, name: 'BEIN SPORTS 1 UHD', url: 'https://main.light-ott.net/play/live.php?mac=A0:BB:3E:02:40:2B&stream=798772&extension=ts' },
     { id: 2, name: 'BEIN SPORTS 2 UHD', url: 'https://main.light-ott.net/play/live.php?mac=A0:BB:3E:02:40:2B&stream=798773&extension=ts' },
@@ -241,6 +234,8 @@ const sidebar = document.getElementById('sidebar');
 const unmuteBtn = document.getElementById('unmuteBtn');
 let hlsInstance = null;
 let currentChannel = null;
+let retryCount = 0;
+const MAX_RETRIES = 3;
 
 // ============================================================
 // 📋 دروستکردنی لیستی کەناڵەکان
@@ -254,7 +249,7 @@ function renderChannels() {
         div.innerHTML = `
             <span class="channel-number">${String(index + 1).padStart(2, '0')}</span>
             <span class="channel-name">${ch.name}</span>
-            <span class="channel-badge">UHD</span>
+            <span class="channel-badge">TS</span>
         `;
         div.addEventListener('click', () => playChannel(index));
         sidebar.appendChild(div);
@@ -262,41 +257,40 @@ function renderChannels() {
 }
 
 // ============================================================
-// ▶️ پەخشکردنی کەناڵ
+// ▶️ پەخشکردنی کەناڵ (بۆ TS)
 // ============================================================
 function playChannel(index) {
     const channel = CHANNELS[index];
     if (!channel) return;
     
-    // نوێکردنەوەی active
     document.querySelectorAll('.channel-item').forEach((el, i) => {
         el.classList.toggle('active', i === index);
     });
 
     currentChannel = channel;
+    retryCount = 0;
     
-    // نیشاندانی بارکردن
     loading.style.display = 'flex';
     errorMsg.style.display = 'none';
     unmuteBtn.style.display = 'none';
 
-    // گۆڕینی URL بۆ پرۆکسی (چارەسەری CORS)
+    // بۆ TS، پێویستە بە پرۆکسی یان ڕاستەوخۆ
     const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(channel.url);
     
-    // دەستپێکردنی پەخش
+    // هەوڵدان بە پرۆکسی
     loadStream(proxyUrl, channel.url);
 }
 
 // ============================================================
-// 🔄 بارکردنی ستریم
+// 🔄 بارکردنی ستریم - پشتگیری TS
 // ============================================================
 function loadStream(proxyUrl, directUrl) {
-    // ڕاگیرکردنی پەخشی پێشوو
     if (hlsInstance) {
         hlsInstance.destroy();
         hlsInstance = null;
     }
 
+    // بۆ TS، یەکەم هەوڵ بە HLS
     if (Hls.isSupported()) {
         hlsInstance = new Hls({
             enableWorker: true,
@@ -309,7 +303,7 @@ function loadStream(proxyUrl, directUrl) {
                 xhr.withCredentials = false;
                 try {
                     xhr.setRequestHeader('Origin', window.location.origin);
-                    xhr.setRequestHeader('User-Agent', 'Mozilla/5.0');
+                    xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
                 } catch(e) {}
             }
         });
@@ -322,27 +316,32 @@ function loadStream(proxyUrl, directUrl) {
                 loading.style.display = 'none';
                 unmuteBtn.style.display = 'block';
             }).catch(() => {
-                loading.style.display = 'none';
-                unmuteBtn.style.display = 'block';
+                // ئەگەر HLS کار نەکرد، ڕاستەوخۆ ڤیدیۆ بەکاربهێنە
+                tryDirectPlay(directUrl);
             });
         });
 
         hlsInstance.on(Hls.Events.ERROR, function(event, data) {
             console.error('HLS Error:', data);
             if (data.fatal) {
-                // هەوڵدان بە بێ پرۆکسی
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    // ئەگەر پرۆکسی کار نەکرد، ڕاستەوخۆ هەوڵبدە
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR && retryCount < MAX_RETRIES) {
+                    retryCount++;
                     setTimeout(() => {
-                        if (hlsInstance) {
-                            hlsInstance.loadSource(directUrl);
-                        }
-                    }, 2000);
+                        if (hlsInstance) hlsInstance.startLoad();
+                    }, 2000 * retryCount);
                 } else {
-                    showError('کێشە لە پەخش - هەوڵدانەوە');
+                    // HLS سەرنەکەوت، ڕاستەوخۆ ڤیدیۆ بەکاربهێنە
+                    tryDirectPlay(directUrl);
                 }
             }
         });
+
+        // ئەگەر HLS نەیتوانی مانگیفێست بدۆزێتەوە، دوای ٥ چرکە ڕاستەوخۆ هەوڵبدە
+        setTimeout(() => {
+            if (loading.style.display !== 'none') {
+                tryDirectPlay(directUrl);
+            }
+        }, 5000);
 
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         // Safari
@@ -354,8 +353,31 @@ function loadStream(proxyUrl, directUrl) {
             });
         });
     } else {
-        showError('برووسەرەکەت پشتگیری ناکات');
+        // ئەگەر هیچ شتێک کار نەکرد، ڕاستەوخۆ ڤیدیۆ
+        tryDirectPlay(directUrl);
     }
+}
+
+// ============================================================
+// 🎯 پەخشکردنی ڕاستەوخۆ (بۆ TS)
+// ============================================================
+function tryDirectPlay(url) {
+    if (hlsInstance) {
+        hlsInstance.destroy();
+        hlsInstance = null;
+    }
+    
+    // بۆ TS، دەتوانین بە شێوەی ئاسایی ڤیدیۆ پەخش بکەین
+    video.src = url;
+    video.load();
+    
+    video.play().then(() => {
+        loading.style.display = 'none';
+        unmuteBtn.style.display = 'block';
+    }).catch((err) => {
+        console.error('Direct play error:', err);
+        showError('ناتوانرێت پەخش بکرێت - هەوڵدانەوە');
+    });
 }
 
 // ============================================================
@@ -386,13 +408,23 @@ video.addEventListener('click', function() {
     if (video.muted) unmuteVideo();
 });
 
+// ئەگەر ڤیدیۆ وەستا، دووبارە هەوڵبدەرەوە
+video.addEventListener('stalled', function() {
+    if (currentChannel) {
+        const idx = CHANNELS.indexOf(currentChannel);
+        if (idx > -1) {
+            setTimeout(() => playChannel(idx), 3000);
+        }
+    }
+});
+
 // ============================================================
-// 🚀 دەستپێکردن - یەکەم کەناڵ
+// 🚀 دەستپێکردن
 // ============================================================
 renderChannels();
 playChannel(0);
 
-console.log('🐱 BEIN SPORTS UHD - CAT Shadow Engine Active');
+console.log('🐱 BEIN SPORTS UHD - CAT Shadow Engine (TS Streams)');
 </script>
 </body>
 </html>
