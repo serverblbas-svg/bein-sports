@@ -76,6 +76,13 @@
             font-weight: 700;
             margin-right: auto;
         }
+        .channel-status {
+            font-size: 10px;
+            color: #666;
+            margin-right: 6px;
+        }
+        .channel-status.on { color: #4caf50; }
+        .channel-status.off { color: #ff6b6b; }
 
         #videoContainer {
             flex: 1;
@@ -102,7 +109,7 @@
             font-weight: bold;
             z-index: 10;
             text-shadow: 0 0 30px rgba(255, 204, 0, 0.3);
-            background: rgba(0,0,0,0.5);
+            background: rgba(0,0,0,0.6);
             padding: 6px 16px;
             border-radius: 8px;
             border-right: 3px solid #ffcc00;
@@ -157,22 +164,40 @@
             padding: 16px;
             cursor: pointer;
             max-width: 80%;
-            line-height: 1.5;
+            line-height: 1.6;
         }
         #errorMsg:hover { text-decoration: underline; }
+
+        #statusBar {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 13px;
+            color: #aaa;
+            z-index: 15;
+            border: 1px solid #2a2a2a;
+            display: none;
+            text-align: center;
+            max-width: 90%;
+        }
+        #statusBar .highlight { color: #ffcc00; }
 
         @media (max-width: 768px) {
             #mainContainer { flex-direction: column; }
             #sidebar {
                 width: 100%;
                 min-width: unset;
-                height: 32vh;
+                height: 30vh;
                 order: 1;
                 border-left: none;
                 border-bottom: 1px solid #2a2a2a;
             }
             #videoContainer {
-                height: 68vh;
+                height: 70vh;
                 width: 100%;
                 order: 2;
             }
@@ -189,6 +214,7 @@
                 font-size: 13px;
             }
             .channel-item { padding: 8px 12px; font-size: 12px; }
+            #statusBar { bottom: 60px; font-size: 11px; padding: 6px 14px; }
         }
     </style>
 </head>
@@ -200,9 +226,10 @@
         <div id="brandName">BEIN SPORTS UHD</div>
         <video id="videoPlayer" playsinline autoplay muted></video>
         <button id="unmuteBtn" onclick="unmuteVideo()">🔊 کلیک بکە بۆ دەنگ</button>
+        <div id="statusBar">⏳ <span class="highlight">بارکردن...</span></div>
         <div id="loading">
             <div class="spinner"></div>
-            <span>⏳ بارکردنی پەخش...</span>
+            <span>⏳ پەیوەندیکردن...</span>
             <div id="errorMsg"></div>
         </div>
     </div>
@@ -210,7 +237,7 @@
 
 <script>
 // ============================================================
-// 🐱 CAT SHADOW ENGINE - BEIN SPORTS (بەبێ پرۆکسی)
+// 🐱 CAT SHADOW ENGINE - دیاریکردنی کێشە
 // ============================================================
 
 const CHANNELS = [
@@ -228,11 +255,12 @@ const CHANNELS = [
 const video = document.getElementById('videoPlayer');
 const loading = document.getElementById('loading');
 const errorMsg = document.getElementById('errorMsg');
+const statusBar = document.getElementById('statusBar');
 const sidebar = document.getElementById('sidebar');
 const unmuteBtn = document.getElementById('unmuteBtn');
 let hlsInstance = null;
-let currentChannel = null;
 let currentIndex = 0;
+let isPlaying = false;
 
 // ============================================================
 // 📋 لیستی کەناڵەکان
@@ -247,10 +275,36 @@ function renderChannels() {
             <span class="channel-number">${String(index + 1).padStart(2, '0')}</span>
             <span class="channel-name">${ch.name}</span>
             <span class="channel-badge">UHD</span>
+            <span class="channel-status" id="status_${index}">⏳</span>
         `;
         div.addEventListener('click', () => playChannel(index));
         sidebar.appendChild(div);
     });
+}
+
+// ============================================================
+// 📊 نوێکردنەوەی دۆخی کەناڵ
+// ============================================================
+function setChannelStatus(index, status) {
+    const el = document.getElementById('status_' + index);
+    if (!el) return;
+    el.className = 'channel-status ' + status;
+    el.textContent = status === 'on' ? '✅' : status === 'off' ? '❌' : '⏳';
+}
+
+// ============================================================
+// 📝 نوێکردنەوەی ستاتوس بار
+// ============================================================
+function setStatus(text, isError = false) {
+    statusBar.style.display = 'block';
+    statusBar.innerHTML = text;
+    if (isError) {
+        statusBar.style.borderColor = '#ff6b6b';
+        statusBar.style.color = '#ff6b6b';
+    } else {
+        statusBar.style.borderColor = '#2a2a2a';
+        statusBar.style.color = '#aaa';
+    }
 }
 
 // ============================================================
@@ -264,12 +318,14 @@ function playChannel(index) {
         el.classList.toggle('active', i === index);
     });
 
-    currentChannel = channel;
     currentIndex = index;
+    isPlaying = false;
     
     loading.style.display = 'flex';
     errorMsg.style.display = 'none';
     unmuteBtn.style.display = 'none';
+    statusBar.style.display = 'block';
+    setStatus('⏳ پەیوەندیکردن بە ' + channel.name);
 
     // ڕاگیرکردنی HLS کۆن
     if (hlsInstance) {
@@ -277,15 +333,18 @@ function playChannel(index) {
         hlsInstance = null;
     }
 
-    // هەوڵدان بۆ پەخش بە سێ شێوە
-    tryPlay(channel.url);
+    // تاقیکردنەوەی پەخش
+    testStream(channel.url, index);
 }
 
 // ============================================================
-// 🎯 سێ شێوەی جیاواز بۆ پەخش
+// 🔍 تاقیکردنەوەی ستریم
 // ============================================================
-function tryPlay(url) {
-    // شێوەی ١: HLS
+function testStream(url, index) {
+    setStatus('📡 تاقیکردنەوەی پەخش...');
+    setChannelStatus(index, 'loading');
+
+    // یەکەم: تاقیکردنەوەی بە HLS
     if (Hls.isSupported()) {
         hlsInstance = new Hls({
             enableWorker: true,
@@ -303,85 +362,64 @@ function tryPlay(url) {
         hlsInstance.attachMedia(video);
 
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+            setStatus('✅ مانگیفێست بارکرا، دەستپێکردنی پەخش...');
             video.play().then(() => {
+                isPlaying = true;
                 loading.style.display = 'none';
                 unmuteBtn.style.display = 'block';
-            }).catch(() => {
-                // شێوەی ٢: ڤیدیۆی ئاسایی
-                tryDirectPlay(url);
+                setStatus('▶️ پەخشی ' + CHANNELS[index].name + ' — <span class="highlight">زیندوو</span>');
+                setChannelStatus(index, 'on');
+            }).catch((err) => {
+                setStatus('⚠️ پەخش نەکرا: ' + err.message, true);
+                tryDirectPlay(url, index);
             });
         });
 
         hlsInstance.on(Hls.Events.ERROR, function(event, data) {
             if (data.fatal) {
-                // شێوەی ٢: ڤیدیۆی ئاسایی
-                tryDirectPlay(url);
+                setStatus('⚠️ هەڵەی HLS: ' + (data.details || 'نەزانراو'), true);
+                tryDirectPlay(url, index);
             }
         });
 
-        // ئەگەر HLS نەیتوانی، دوای ٤ چرکە بچێت بۆ شێوەی دووەم
+        // دوای ٥ چرکە ئەگەر HLS کار نەکرد
         setTimeout(() => {
             if (loading.style.display !== 'none') {
-                tryDirectPlay(url);
+                setStatus('⏳ HLS وەڵامی نەدایەوە، هەوڵدان بە شێوەی تر...', true);
+                tryDirectPlay(url, index);
             }
-        }, 4000);
+        }, 5000);
 
     } else {
-        // شێوەی ٢: ڤیدیۆی ئاسایی
-        tryDirectPlay(url);
+        tryDirectPlay(url, index);
     }
 }
 
 // ============================================================
 // 📺 پەخش بە ڤیدیۆی ئاسایی
 // ============================================================
-function tryDirectPlay(url) {
+function tryDirectPlay(url, index) {
     if (hlsInstance) {
         hlsInstance.destroy();
         hlsInstance = null;
     }
 
+    setStatus('📺 هەوڵدان بە پەخشی ڕاستەوخۆ...');
+
     video.src = url;
     video.load();
 
     video.play().then(() => {
+        isPlaying = true;
         loading.style.display = 'none';
         unmuteBtn.style.display = 'block';
-    }).catch(() => {
-        // شێوەی ٣: هەوڵدان بە iframe
-        tryIframePlay(url);
+        setStatus('▶️ پەخشی ' + CHANNELS[index].name + ' — <span class="highlight">زیندوو</span>');
+        setChannelStatus(index, 'on');
+    }).catch((err) => {
+        setStatus('❌ پەخش سەرنەکەوت: ' + err.message, true);
+        setChannelStatus(index, 'off');
+        showError('پەخش نەکرا - ' + err.message);
     });
-}
-
-// ============================================================
-// 🖼️ پەخش بە iframe (کۆتا چارە)
-// ============================================================
-function tryIframePlay(url) {
-    // دروستکردنی iframe بۆ پەخش
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.style.cssText = 'width:100%;height:100%;border:none;position:absolute;inset:0;z-index:5;';
-    iframe.allow = 'autoplay; encrypted-media';
-    iframe.allowFullscreen = true;
-    
-    // ڕاگیرکردنی ڤیدیۆی کۆن
-    video.style.display = 'none';
-    
-    // زیادکردنی iframe
-    const container = document.getElementById('videoContainer');
-    const oldIframe = container.querySelector('iframe');
-    if (oldIframe) oldIframe.remove();
-    container.appendChild(iframe);
-
-    loading.style.display = 'none';
-    unmuteBtn.style.display = 'block';
-
-    // دوای ٥ چرکە، ئەگەر iframe کار نەکرد، هەڵە نیشان بدە
-    setTimeout(() => {
-        if (loading.style.display !== 'none') {
-            showError('هیچ ڕێگەیەک کار نەکرد - تکایە دواتر هەوڵبدەرەوە');
-        }
-    }, 5000);
 }
 
 // ============================================================
@@ -391,16 +429,8 @@ function showError(msg) {
     errorMsg.textContent = '❌ ' + msg + ' — کلیک بکە بۆ هەوڵدانەوە';
     errorMsg.style.display = 'block';
     errorMsg.onclick = function() {
-        // گەڕانەوە بۆ پەخش
         loading.style.display = 'flex';
         errorMsg.style.display = 'none';
-        
-        // لابردنی iframe ئەگەر هەیە
-        const container = document.getElementById('videoContainer');
-        const iframe = container.querySelector('iframe');
-        if (iframe) iframe.remove();
-        video.style.display = 'block';
-        
         playChannel(currentIndex);
     };
     loading.style.display = 'flex';
@@ -420,12 +450,27 @@ video.addEventListener('click', function() {
 });
 
 // ============================================================
+// 📊 دیاریکردنی کێشەکان
+// ============================================================
+function diagnose() {
+    console.log('🔍 دیاریکردنی کێشە:');
+    console.log('- HLS پشتگیری دەکات؟', Hls.isSupported());
+    console.log('- ژمارەی کەناڵەکان:', CHANNELS.length);
+    console.log('- دۆخی ڤیدیۆ:', video.readyState);
+    console.log('- دەنگ بەمۆ?:', video.muted);
+    console.log('- URLی ئێستا:', video.src);
+}
+
+// ============================================================
 // 🚀 دەستپێکردن
 // ============================================================
 renderChannels();
 playChannel(0);
 
-console.log('🐱 BEIN SPORTS UHD - بەبێ پرۆکسی');
+// دوای ٣ چرکە دیاریکردن بکە
+setTimeout(diagnose, 3000);
+
+console.log('🐱 BEIN SPORTS UHD - شێوازی دیاریکردن');
 </script>
 </body>
 </html>
